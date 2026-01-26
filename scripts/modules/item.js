@@ -1,6 +1,6 @@
 import { COMMON } from '../common.js';
 import { Spellcasting } from './spellcasting.js';
-
+import { Corruption } from './corruption.js';
 export class ItemSyb5e {
 	static NAME = 'ItemSyb5e';
 
@@ -13,10 +13,10 @@ export class ItemSyb5e {
 
 	static hooks() {
 		//Hooks.on('dnd5e.preDisplayCard', this.flagWithCorruption);
-    Hooks.on('dnd5e.preItemUsageConsumption', this.swapCorruptionConsumption);
-    Hooks.on('dnd5e.itemUsageConsumption', this.generateCorruptionUsage);
-    Hooks.on('dnd5e.renderChatMessage', this.applyCorruption);
-    //Hooks.on('renderChatLog', this.setChatListeners)
+		Hooks.on('dnd5e.preItemUsageConsumption', this.swapCorruptionConsumption);
+		Hooks.on('dnd5e.itemUsageConsumption', this.generateCorruptionUsage);
+		Hooks.on('dnd5e.renderChatMessage', this.applyCorruption);
+		//Hooks.on('renderChatLog', this.setChatListeners)
 	}
 
 	static patch() {
@@ -27,18 +27,11 @@ export class ItemSyb5e {
 			properties: {
 				get: ItemSyb5e.getProperties,
 			},
-			getRollData: {
-				value: ItemSyb5e.getRollData,
-				mode: 'WRAPPER',
-			},
 			corruption: {
 				get: ItemSyb5e.getCorruption,
 			},
 			corruptionOverride: {
 				get: ItemSyb5e.getCorruptionOverride,
-			},
-			isFavored: {
-				get: ItemSyb5e.getIsFavored,
 			},
 			hasDamage: {
 				value: ItemSyb5e.hasDamage,
@@ -47,10 +40,23 @@ export class ItemSyb5e {
 		};
 
 		COMMON.patch(target, targetPath, patches);
+		this.patchDataModel();
+	}
+
+	static patchDataModel() {
+		const SpellData = dnd5e.dataModels?.item?.SpellData;
+		if (!SpellData) return;
+
+		const original = SpellData.defineSchema;
+		SpellData.defineSchema = function () {
+			const schema = original.call(this);
+			schema.favored = new foundry.data.fields.NumberField({ required: true, integer: true, initial: 0, min: 0, max: 1 });
+			return schema;
+		}
 	}
 
 	static getCorruption() {
-		return Spellcasting._corruptionExpression(this);
+		return Corruption.corruptionExpression(this);
 	}
 
 	static getCorruptionOverride() {
@@ -61,57 +67,34 @@ export class ItemSyb5e {
 		return override;
 	}
 
-	static getIsFavored() {
-		return Spellcasting._isFavored(this);
-	}
-
 	static getProperties() {
-		let props = this.system.properties ?? {};
+		const props = this.system.properties;
+
+		/* DnD5e v4+ properties are Sets */
+		if (props instanceof Set) {
+			if (this.isArmor) {
+				const flags = this.getFlag(COMMON.DATA.name, 'armorProps');
+				if (flags) {
+					for (const [k, v] of Object.entries(flags)) {
+						if (v) props.add(k);
+					}
+				}
+			}
+			return props;
+		}
+
+		/* Legacy support: props is object */
+		let propsObj = props ?? {};
 		/* Armor will also have item properties similar to Weapons */
 
 		/* is armor type? return syb armor props or the default object
 		 * if no flag data exists yet */
 		if (this.isArmor) {
-			return foundry.utils.mergeObject(props, this.getFlag(COMMON.DATA.name, 'armorProps') ?? game.syb5e.CONFIG.DEFAULT_ITEM.armorProps);
+			return foundry.utils.mergeObject(propsObj, this.getFlag(COMMON.DATA.name, 'armorProps') ?? game.syb5e.CONFIG.DEFAULT_ITEM.armorProps);
 		}
 
 		/* all others, fall back to core data */
-		return props;
-	}
-
-	static getRollData(wrapped, ...args) {
-		let data = wrapped(...args);
-
-		/* Patch for core dnd5e - items without attacks do not get ammo damage added
-		 * -> insert needed information here. Resource reduction handled by above getUsageUpdates call
-		 */
-
-		/* if this item is consuming ammo, but does not have an attack roll insert ammo info */
-		const consumptionInfo = this.system.consume;
-		if (consumptionInfo?.type === 'ammo' && !this.hasAttack) {
-			this._ammo = this.actor.items.get(consumptionInfo.target);
-		}
-
-		/* if owned by an SYB actor, insert our
-		 * SYB5E specific fields
-		 */
-		if (!!data && (!this.parent || this.parent.isSybActor())) {
-			data.item.properties = this.properties;
-			data.item.favored = this.isFavored;
-			data.item.type = this.type;
-
-			/* populate most up to date corruption use information */
-			const lastCorruptionField = game.syb5e.CONFIG.PATHS.corruption;
-			const lastCorruptionData = foundry.utils.getProperty(this, lastCorruptionField.root) ?? {
-				expression: this.corruption.expression,
-				total: 0,
-				summary: '- (-)',
-			};
-
-			data.item.corruption = lastCorruptionData;
-		}
-
-		return data;
+		return propsObj;
 	}
 
 	static hasDamage(wrapped, ...args) {
@@ -128,99 +111,103 @@ export class ItemSyb5e {
 		return coreHasDamage || consumedDamage;
 	}
 
-  static swapCorruptionConsumption(item, usage) {
+	static swapCorruptionConsumption(item, usage) {
 		/* if we are a syb actor, modify the current usage updates as to not
 		 * confuse the core spellcasting logic */
-    if (item.actor.isSybActor()) {
-      /* if we are consuming a spell slot, treat it as adding corruption instead */
+		if (item.actor.isSybActor()) {
+			/* if we are consuming a spell slot, treat it as adding corruption instead */
 			/* Note: consumeSpellSlot only valid for _leveled_ spells. All others MUST add corruption if a valid expression */
-			usage.consumeCorruption = !!usage.consumeSpellSlot ||
+			usage.consumeCorruption = !!usage.consumeCorruption || !!usage.consumeSpellSlot ||
 				(parseInt(item.system?.level ?? 0) < 1 && item.corruption.expression != game.syb5e.CONFIG.DEFAULT_ITEM.corruptionOverride.expression);
 
 			/* We are _never_ consuming spell slots in syb5e */
 			usage.consumeSpellSlot = false;
-    }
-  }
+		}
+	}
 
 	static generateCorruptionUsage(item, usage, chatData, updates) {
 		/* if we are consuming corruption, the needed chatmessage data is inserted.
-     * otherwise, we ensure there is no 'last consumption' field via item updates.
-     */
-    const sybUpdates = Spellcasting._getUsageUpdates(item, usage, chatData);
-    foundry.utils.mergeObject(updates, sybUpdates);
+	 * otherwise, we ensure there is no 'last consumption' field via item updates.
+	 */
+		const sybUpdates = Spellcasting._getUsageUpdates(item, usage, chatData);
+		foundry.utils.mergeObject(updates, sybUpdates);
 	}
 
-  // static _handleEventAction(ev) {
-  //   const target = ev.target.closest('[data-action]');
-  //   if (!target) return;
+	// static _handleEventAction(ev) {
+	//   const target = ev.target.closest('[data-action]');
+	//   if (!target) return;
 
-  //   ev.preventDefault();
-  //   switch (target.dataset.action) {
-  //     case 'undo':
-  //       const {type = 'temp', total = 0} = target.dataset;
-  //     default: break;
-  //   }
-  // }
+	//   ev.preventDefault();
+	//   switch (target.dataset.action) {
+	//     case 'undo':
+	//       const {type = 'temp', total = 0} = target.dataset;
+	//     default: break;
+	//   }
+	// }
 
-  // static setChatListeners(app, [html]) {
-  //   const chatContainers = html.querySelectorAll('#chat-log .symbaroum-dnd5e-mod');
-  //   for( let container of chatContainers) container.addEventListener('click', this._handleEventAction);
-  // }
+	// static setChatListeners(app, [html]) {
+	//   const chatContainers = html.querySelectorAll('#chat-log .symbaroum-dnd5e-mod');
+	//   for( let container of chatContainers) container.addEventListener('click', this._handleEventAction);
+	// }
 
-  static async applyCorruption(message, html) {
-    const corruption = foundry.utils.getProperty(message, game.syb5e.CONFIG.PATHS.corruption.root + '.last') ?? {};
+	static async applyCorruption(message, html) {
+		const corruption = foundry.utils.getProperty(message, game.syb5e.CONFIG.PATHS.corruption.root + '.last') ?? {};
 
-    /* Do not re-eval previously rolled corruption values */
-    if ( message.author.isSelf 
-      && ('expression' in corruption)
-      && !('total' in corruption)) {
+		/* Do not re-eval previously rolled corruption values */
+		if (message.author.isSelf
+			&& ('expression' in corruption)
+			&& !('total' in corruption)) {
 
-      const {itemUuid = null} = message.getFlag('dnd5e','use'); 
-      const item = await fromUuid(itemUuid);
-      const actor = item.actor;
+			const { itemUuid = null } = message.getFlag('dnd5e', 'use');
+			const item = await fromUuid(itemUuid);
+			const actor = item.actor;
 
-      const cRoll = new Roll(`ceil(${corruption.expression})`);
-      await cRoll.evaluate();
+			const cRoll = new Roll(`ceil(${corruption.expression})`);
+			await cRoll.evaluate();
 
-      const gained = cRoll.total;
+			const gained = cRoll.total;
 
-      /* only update actor if we actually gain corruption */
-      if (gained != 0) {
-        /* field name shortcuts */
-        const fieldKey = corruption.type;
+			/* only update actor if we actually gain corruption */
+			if (gained != 0) {
+				/* field name shortcuts */
+				const fieldKey = corruption.type;
 
-        /* get the current corruption values */
-        let currentCorruption = item.actor.corruption;
+				/* get the current corruption values */
+				let currentCorruption = item.actor.corruption;
 
-        /* add in our gained corruption to the temp corruption */
-        currentCorruption[fieldKey] = currentCorruption[fieldKey] + gained;
+				/* add in our gained corruption to the temp corruption */
+				currentCorruption[fieldKey] = currentCorruption[fieldKey] + gained;
 
-        /* insert this update into the actorUpdates */
-        const acPath = game.syb5e.CONFIG.PATHS.corruption[fieldKey];
-        await actor.update({[acPath]: currentCorruption[fieldKey]});
-      }
+				/* insert this update into the actorUpdates */
+				const acPath = game.syb5e.CONFIG.PATHS.corruption[fieldKey];
+				await actor.update({ [acPath]: currentCorruption[fieldKey] });
+			}
 
-      /* always set the item's last corruption data */
-      const icPath = game.syb5e.CONFIG.PATHS.corruption.root + '.last';
-      item.update({[icPath]: {
-        ...corruption,
-        total: gained,
-      }});
+			/* always set the item's last corruption data */
+			const icPath = game.syb5e.CONFIG.PATHS.corruption.root + '.last';
+			item.update({
+				[icPath]: {
+					...corruption,
+					total: gained,
+				}
+			});
 
-      /* update the total on the chatcard for rendering */
-      message.update({[icPath]: {
-        ...corruption,
-        total: gained,
-      }});
-    } else if ('total' in corruption) {
-      /* inject previously rolled corruption results */
-      const header = {
+			/* update the total on the chatcard for rendering */
+			message.update({
+				[icPath]: {
+					...corruption,
+					total: gained,
+				}
+			});
+		} else if ('total' in corruption) {
+			/* inject previously rolled corruption results */
+			const header = {
 				temp: 'SYB5E.Corruption.TempDamage',
 				permanent: 'SYB5E.Corruption.PermDamage',
 			}[corruption.type];
 
-      // <i class="fa-solid fa-backward-fast" data-action="undo" data-type="${corruption.type}" data-total="${corruption.total}"></i>
-      const corruptionContent = `
+			// <i class="fa-solid fa-backward-fast" data-action="undo" data-type="${corruption.type}" data-total="${corruption.total}"></i>
+			const corruptionContent = `
 <div class="symbaroum-dnd5e-mod chat">
   <h3>${game.i18n.localize(header)}</h3>
   <p class="roll-output" >
@@ -232,8 +219,8 @@ export class ItemSyb5e {
   </p>
 </div>`;
 
-      html.insertAdjacentHTML('beforeend', corruptionContent);
-    }
-  
-  }
+			html.insertAdjacentHTML('beforeend', corruptionContent);
+		}
+
+	}
 }

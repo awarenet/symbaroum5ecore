@@ -1,171 +1,173 @@
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
 import { Resting } from '../resting.js';
 import { COMMON } from '../../common.js';
 
-export class SybRestDialog extends Dialog {
-	constructor({ actor, type }, /*{newDay=false, autoHD=false, autoHDThreshold=3} = {},*/ dialogData = {}, options = {}) {
-		super(dialogData, options);
-
-		/**
-		 * Store a reference to the Actor entity which is resting
-		 * @type {Actor5e}
-		 */
-		this.actor = actor;
-
-		/**
-		 * Track the most recently used HD denomination for re-rendering the form
-		 * @type {string}
-		 */
+export class SybRestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
+	constructor(options = {}) {
+		super(options);
+		this.actor = options.actor;
+		this.type = options.type;
 		this._denom = null;
 
-		this.type = type;
-
-		/* store our various rest options */
-		//this.options = {newDay, autoHD, autoHDThreshold};
-
-		/**
-		 * Grab stock dnd5e rest functions we want to re-use
-		 * @type {function}
-		 */
-		this._onRollHitDie = dnd5e.applications.actor.ShortRestDialog.prototype._onRollHitDie.bind(this);
-
-		this._getCoreData = dnd5e.applications.actor.ShortRestDialog.prototype.getData.bind(this);
+		/* We'll use a local promise resolution for the dialog result */
+		this._resolve = options.resolve;
+		this._reject = options.reject;
 	}
 
-	/* -------------------------------------------- */
+	static DEFAULT_OPTIONS = {
+		tag: "form",
+		id: "syb-rest-dialog",
+		classes: ["dnd5e2", "standard-form"], // using standard-form to mimic dialog styling
+		window: {
+			title: "Rest", // overridden in initialization
+			resizable: true,
+			icon: "fas fa-bed"
+		},
+		position: {
+			width: 400,
+			height: "auto"
+		},
+		form: {
+			handler: SybRestDialog._onSubmit,
+			closeOnSubmit: true
+		}
+	};
+
+	static PARTS = {
+		form: {
+			template: `modules/symbaroum5ecore/templates/apps/rest.hbs`
+		}
+	};
 
 	/** @override */
-	static get defaultOptions() {
-		return foundry.utils.mergeObject(super.defaultOptions, {
-			template: `${COMMON.DATA.path}/templates/apps/rest.html`,
-			classes: ['dnd5e', 'dialog', 'syb5e'],
-		});
-	}
+	async _prepareContext(options) {
+		const context = await super._prepareContext(options);
 
-	/* -------------------------------------------- */
-
-	/** @override */
-	activateListeners(html) {
-		super.activateListeners(html);
-		let healHp = html.find('#roll-hd');
-		healHp.click(this._onRollHitDie.bind(this));
-
-		let redCorr = html.find('#heal-corr');
-		redCorr.click(this._onReduceCorruption.bind(this));
-	}
-
-	/* -------------------------------------------- */
-
-	/** @override */
-	getData() {
-		/* leverage dnd5e functions */
-		const data = this._getCoreData();
+		/* Re-implementing core Short Rest logic loosely since we can't easily mix V1/V2 inheritance */
+		context.availableHD = this.actor.system.attributes.hd;
+		context.denomination = this._denom;
 
 		const restTypes = game.syb5e.CONFIG.REST_TYPES;
 
-		data.restHint = {
+		context.restHint = {
 			[restTypes.short]: 'SYB5E.Rest.ShortHint',
 			[restTypes.long]: 'SYB5E.Rest.LongHint',
 			[restTypes.extended]: 'SYB5E.Rest.ExtendedHint',
 		}[this.type];
 
-		data.isExtended = this.type === restTypes.extended;
-		data.isShort = this.type === restTypes.short;
-		data.promptNewDay = this.type !== restTypes.short;
+		context.isExtended = this.type === restTypes.extended;
+		context.isShort = this.type === restTypes.short;
+		context.promptNewDay = this.type !== restTypes.short;
 
-		/* Rests can both roll HD for heal and corr AND
-		 * automatically recover upon completion. We need
-		 * to preview our totals so we dont have to do
-		 * mental math
-		 */
+		/* Preview calculations */
 		const actor5eData = this.actor.system;
-
 		const gain = Resting._restHpGain(this.actor, this.type);
-
 		const corruption = this.actor.corruption;
-
 		const corrRecovery = Resting._getCorruptionRecovery(this.actor, this.type);
 
-		data.preview = {
+		context.preview = {
 			hp: actor5eData.attributes.hp.value + gain,
 			maxHp: actor5eData.attributes.hp.max,
 			tempCorr: Math.max(corruption.temp - corrRecovery, 0),
-			//totalCorr: Math.max(corruption.value - corrRecovery, 0),
 			maxCorr: corruption.max,
 		};
 
-		/* clamp HP and corruption */
-		data.preview.totalCorr = data.preview.tempCorr + corruption.permanent;
-		data.preview.hp = Math.min(data.preview.hp, data.preview.maxHp);
+		context.preview.totalCorr = context.preview.tempCorr + corruption.permanent;
+		context.preview.hp = Math.min(context.preview.hp, context.preview.maxHp);
 
-		return data;
+		/* Title update */
+		this.window.title = this._getDialogTitle();
+
+		/* Replicating dnd5e short rest data structure if needed by template */
+		context.canRoll = context.availableHD.value > 0;
+		/* 
+		   Prepare denomination options for the select.
+		*/
+		context.denominations = Object.entries(context.availableHD.bySize).map(([size, value]) => {
+			return {
+				hitDice: size,
+				label: size,
+				available: value,
+				parent: size
+			};
+		}).filter(d => d.available > 0);
+
+		return context;
 	}
-	/* -------------------------------------------- */
 
-	async _onReduceCorruption(event) {
+	_getDialogTitle() {
+		switch (this.type) {
+			case game.syb5e.CONFIG.REST_TYPES.short:
+				return `Short Rest: ${this.actor.name}`;
+			case game.syb5e.CONFIG.REST_TYPES.long:
+				return `Long Rest: ${this.actor.name}`;
+			case game.syb5e.CONFIG.REST_TYPES.extended:
+				return `Extended Rest: ${this.actor.name}`;
+			default:
+				return "Rest";
+		}
+	}
+
+	/** @override */
+	_onRender(context, options) {
+		super._onRender(context, options);
+
+		/* Attach listeners using standard DOM since we are in V2 */
+		// Roll Hit Die
+		this.element.querySelectorAll('#roll-hd').forEach(b => {
+			b.addEventListener("click", this._onRollHitDie.bind(this));
+		});
+
+		// Reduce Corruption
+		this.element.querySelectorAll('#heal-corr').forEach(b => {
+			b.addEventListener("click", this._onReduceCorruption.bind(this));
+		});
+
+
+		// Cancel button (using data-action="cancel" which is standard in V2 but we want custom rejection)
+		this.element.querySelectorAll('[data-action="cancel"]').forEach(b => {
+			b.addEventListener("click", (e) => {
+				e.preventDefault();
+				this.close();
+				this._reject('cancelled');
+			});
+		});
+	}
+
+	/* Re-implementing logic as we cannot reliably bind V1 methods */
+	async _onRollHitDie(event) {
 		event.preventDefault();
-		const button = event.currentTarget;
-		this._denom = button.form.hd.value;
-		await Resting.corruptionHeal(this.actor, this.actor.system.attributes.prof);
-		await Resting.expendHitDie(this.actor, this._denom);
+		const hdSelect = this.element.querySelector('select[name="hd"]');
+		if (!hdSelect) return;
+		const denom = hdSelect.value;
+		await this.actor.rollHitDie({ denomination: denom });
 		this.render();
 	}
 
-	/* -------------------------------------------- */
-
-	static _generateDialogData(actor, restType, resolve, reject) {
-		/* default data common to most rest types */
-		let data = {
-			title: '',
-			buttons: {
-				rest: {
-					icon: '<i class="fas fa-bed"></i>',
-					label: game.i18n.localize('DND5E.Rest'),
-					callback: (html) => {
-						const newDay = html.find('input[name="newDay"]')[0].checked;
-						resolve(newDay);
-					},
-				},
-				cancel: {
-					icon: '<i class="fas fa-times"></i>',
-					label: game.i18n.localize('Cancel'),
-					callback: () => reject('cancelled'),
-				},
-			},
-			default: 'rest',
-			close: () => reject('cancelled'),
-		};
-
-		/* modify the stock data with rest specific information */
-		switch (restType) {
-			case game.syb5e.CONFIG.REST_TYPES.short:
-				data.title = `${COMMON.localize('DND5E.ShortRest')}: ${actor.name}`;
-
-				/* this is the only rest that wont cause a new day */
-				data.buttons.rest.callback = (/*html*/) => {
-					const newDay = false;
-					resolve(newDay);
-				};
-
-				break;
-			case game.syb5e.CONFIG.REST_TYPES.long:
-				data.title = `${COMMON.localize('DND5E.LongRest')}: ${actor.name}`;
-				break;
-			case game.syb5e.CONFIG.REST_TYPES.extended:
-				data.title = `${COMMON.localize('SYB5E.Rest.Extended')}: ${actor.name}`;
-				break;
-		}
-
-		return data;
+	async _onReduceCorruption(event) {
+		event.preventDefault();
+		const hdSelect = this.element.querySelector('select[name="hd"]');
+		if (!hdSelect) return;
+		const denom = hdSelect.value;
+		await Resting.expendHitDie(this.actor, denom) && await Resting.corruptionHeal(this.actor, this.actor.system.attributes.prof);
+		this.render();
 	}
 
-	/* -------------------------------------------- */
+	static async _onSubmit(event, form, formData) {
+		// New Day boolean is in formData
+		const newDay = formData.object.newDay;
+		this._resolve(newDay);
+	}
 
 	static async restDialog({ actor, type }) {
 		return new Promise((resolve, reject) => {
-			/* use an IFFE such that it can access resolve and reject */
-			const dialogData = SybRestDialog._generateDialogData(actor, type, resolve, reject);
-
-			new SybRestDialog({ actor, type }, dialogData).render(true);
+			new SybRestDialog({
+				actor,
+				type,
+				resolve,
+				reject
+			}).render(true);
 		});
 	}
 }

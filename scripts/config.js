@@ -10,7 +10,6 @@ export class SYB5E {
   static register() {
     this.globals();
     this.templates();
-    this.settings();
     this.hooks();
   }
 
@@ -19,137 +18,14 @@ export class SYB5E {
   }
 
   static templates() {
+    const loadTemplates = foundry.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
     return loadTemplates([
-      /* Actor partials */
-      `${COMMON.DATA.path}/templates/actors/parts/actor-corruption.html`,
-      `${COMMON.DATA.path}/templates/actors/parts/actor-shadow.html`,
-      `${COMMON.DATA.path}/templates/actors/parts/actor-currency.html`,
-
-      /* Item partials */
-      `${COMMON.DATA.path}/templates/items/parts/spell-favored.html`,
-      `${COMMON.DATA.path}/templates/items/parts/armor-properties.html`,
-
-      /* App partials */
-      `${COMMON.DATA.path}/templates/apps/rest.html`,
+      `${COMMON.DATA.path}/templates/apps/rest.hbs`,
     ]);
   }
 
   /* registering our settings */
   static settings() {
-    const settingsData = {
-      charBGChoice: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'url(../images/background/bg-paper.webp) repeat',
-      },
-      charTextColour: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#000000',
-      },
-      npcBGChoice: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'url(../images/background/bg-paper.webp) repeat',
-      },
-      switchCharBGColour: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'url(../images/background/bg-paper.webp) repeat',
-      },
-      switchNpcBGColour: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'url(../images/background/bg-paper.webp) repeat',
-      },
-      npcTextColour: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#000000',
-      },
-      charFontFamily: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'Fondamento',
-      },
-      npcFontFamily: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: 'Fondamento',
-      },
-      charBorder: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '8px solid transparent',
-      },
-      npcBorder: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '8px solid transparent',
-      },
-      charChanged: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '',
-      },
-      npcChanged: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '',
-      },
-      charItemLink: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#000000',
-      },
-      npcItemLink: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#000000',
-      },
-      charTag: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#ffffff',
-      },
-      npcTag: {
-        restricted: false,
-        type: String,
-        config: false,
-        scope: 'client',
-        default: '#ffffff',
-      },
-    };
 
     game.settings.registerMenu('symbaroum5ecore', 'symbaroumSettings', {
       name: 'SYB5E.setting.config-menu-label.name',
@@ -164,7 +40,7 @@ export class SYB5E {
   }
 
   static hooks() {
-    Hooks.on('i18nInit', SYB5E._preTranslateConfig); 
+    Hooks.on('i18nInit', SYB5E._preTranslateConfig);
   }
 
   static _preTranslateConfig() {
@@ -181,19 +57,19 @@ export class SYB5E {
 
     /* Extend dnd5e weapon properties */
     const weaProps = {
-        are: { label: 'SYB5E.Item.WeaponProps.AreaEffect' },
-        bal: { label: 'SYB5E.Item.WeaponProps.Balanced' },
-        crw: { label: 'SYB5E.Item.WeaponProps.Crewed' },
-        con: { label: 'SYB5E.Item.WeaponProps.Concealed' },
-        dim: { label: 'SYB5E.Item.WeaponProps.DeepImpact' },
-        ens: { label: 'SYB5E.Item.WeaponProps.Ensnaring' },
-        imm: { label: 'SYB5E.Item.WeaponProps.Immobile' },
-        msv: { label: 'SYB5E.Item.WeaponProps.Massive' },
-        res: { label: 'SYB5E.Item.WeaponProps.Restraining' },
-        sge: { label: 'SYB5E.Item.WeaponProps.Siege' },
-      }
+      are: { label: 'SYB5E.Item.WeaponProps.AreaEffect' },
+      bal: { label: 'SYB5E.Item.WeaponProps.Balanced' },
+      crw: { label: 'SYB5E.Item.WeaponProps.Crewed' },
+      con: { label: 'SYB5E.Item.WeaponProps.Concealed' },
+      dim: { label: 'SYB5E.Item.WeaponProps.DeepImpact' },
+      ens: { label: 'SYB5E.Item.WeaponProps.Ensnaring' },
+      imm: { label: 'SYB5E.Item.WeaponProps.Immobile' },
+      msv: { label: 'SYB5E.Item.WeaponProps.Massive' },
+      res: { label: 'SYB5E.Item.WeaponProps.Restraining' },
+      sge: { label: 'SYB5E.Item.WeaponProps.Siege' },
+    }
 
-    Reflect.ownKeys(weaProps).forEach( prop => {
+    Reflect.ownKeys(weaProps).forEach(prop => {
       globalThis.game.dnd5e.config.validProperties.weapon.add(prop);
       globalThis.game.dnd5e.config.itemProperties[prop] = COMMON.translateObject(weaProps[prop]);
     });
@@ -206,7 +82,7 @@ export class SYB5E {
       wei: { label: 'SYB5E.Item.ArmorProps.Weighty' },
     }
 
-    Reflect.ownKeys(armProps).forEach( prop => {
+    Reflect.ownKeys(armProps).forEach(prop => {
       globalThis.game.dnd5e.config.validProperties.equipment.add(prop);
       globalThis.game.dnd5e.config.itemProperties[prop] = COMMON.translateObject(armProps[prop]);
     });
@@ -225,13 +101,13 @@ export class SYB5E {
     /* add in "None" spell school (mainly for Troll Singer Songs) */
     foundry.utils.mergeObject(
       globalThis.game.dnd5e.config.spellSchools,
-      {  
+      {
         non: {
           fullKey: "none",
           label: 'None',
           icon: '/icons/svg/cancel.svg',
         }
-      } 
+      }
     );
 
     /* Store new armor properties */
@@ -244,9 +120,9 @@ export class SYB5E {
 
     /* insert translated keys into our default item properties */
     globalThis.game.syb5e.CONFIG.DEFAULT_ITEM.armorProps = Object.keys(globalThis.game.syb5e.CONFIG.ARMOR_PROPS).reduce((acc, key) => {
-        acc[key] = false;
-        return acc;
-      }, {});
+      acc[key] = false;
+      return acc;
+    }, {});
 
     /* Replace currency names */
     globalThis.game.syb5e.CONFIG.CURRENCY = COMMON.translateObject({
@@ -254,6 +130,9 @@ export class SYB5E {
       sp: 'SYB5E.Currency.Shilling',
       cp: 'SYB5E.Currency.Orteg',
     });
+
+
+
   }
 
   /* setting our global config data */
@@ -287,17 +166,17 @@ export class SYB5E {
     /* add 'abomination' and 'phenomenon' to creature types */
     foundry.utils.mergeObject(
       globalThis.game.dnd5e.config.creatureTypes, {
-        abomination: {
-          label: 'SYB5E.Creature.Abomination',
-          icon: '/icons/creatures/magical/spirit-undead-ghost-tan-teal.webp',
-          detectAlignment: true,
-        },
-        phenomenon: {
-          label: 'SYB5E.Creature.Phenomenon',
-          icon: '/icons/creatures/magical/spirit-undead-ghost-purple.webp',
-          detectAlignment: true,
-        }
+      abomination: {
+        label: 'SYB5E.Creature.Abomination',
+        icon: '/icons/creatures/magical/spirit-undead-ghost-tan-teal.webp',
+        detectAlignment: true,
+      },
+      phenomenon: {
+        label: 'SYB5E.Creature.Phenomenon',
+        icon: '/icons/creatures/magical/spirit-undead-ghost-purple.webp',
+        detectAlignment: true,
       }
+    }
     );
 
     /* redefine used currencies (only cp, sp, gp) */
@@ -333,7 +212,7 @@ export class SYB5E {
       corruption: false, //temp storage for previously rolled corruption
     };
 
-    const root = `flags.${COMMON.DATA.name}`;
+    const root = `system`;
 
     /* paths for syb flag data */
     globalThis.game.syb5e.CONFIG.PATHS = {
@@ -346,7 +225,7 @@ export class SYB5E {
         ability: `${root}.corruption.ability`,
         temp: `${root}.corruption.temp`,
         permanent: `${root}.corruption.permanent`,
-        value: undefined, //getter only for actors
+        value: `${root}.corruption.value`,
         max: `${root}.corruption.max`,
         bonus: `${root}.corruption.bonus`,
         last: {
@@ -356,18 +235,18 @@ export class SYB5E {
         },
       },
       corruptionOverride: {
-        root: `${root}.corruptionOverride`,
-        type: `${root}.corruptionOverride.type`,
-        value: `${root}.corruptionOverride.value`, //getter only for actors
-        mode: `${root}.corruptionOverride.mode`, //for custom corruption items
+        root: `flags.${COMMON.DATA.name}.corruptionOverride`,
+        type: `flags.${COMMON.DATA.name}.corruptionOverride.type`,
+        value: `flags.${COMMON.DATA.name}.corruptionOverride.value`, //getter only for actors
+        mode: `flags.${COMMON.DATA.name}.corruptionOverride.mode`, //for custom corruption items
       },
-      manner: `${root}.manner`,
-      shadow: `${root}.shadow`,
-      favored: `${root}.favored`,
-      armorProps: `${root}.armorProps`,
+      manner: `flags.${COMMON.DATA.name}.manner`,
+      shadow: `flags.${COMMON.DATA.name}.shadow`,
+      favored: `system.favored`,
+      armorProps: `flags.${COMMON.DATA.name}.armorProps`,
       sybSoulless: {
-        dataPath: `flags.dnd5e.sybSoulless`,
-        scope: 'dnd5e',
+        dataPath: `flags.${COMMON.DATA.name}.sybSoulless`,
+        scope: COMMON.DATA.name,
         key: 'sybSoulless',
       },
     };

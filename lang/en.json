@@ -57,13 +57,7 @@
         "name": "Symbaroum Wide Journal"
       }
     },
-    "menu": {
-      "forceImport": {
-        "name": "Re-run Module Initial Import",
-        "label": "Import Module Content",
-        "hint": "Forces a reimport to occur as if this is the module's initial launch."
-      }
-    },
+    "menu": {},
     "Never": "Never",
     "Init": {
       "SubModule": "Initializing Sub-Module: {name}"
@@ -122,6 +116,7 @@
       "CostThaler": "Cost (Th)"
     },
     "Spell": {
+      "FavoredSpell": "Favored Spell",
       "Favored": "Favored",
       "NotFavored": "Not Favored",
       "NeverFavored": "Never Favored",
@@ -135,6 +130,7 @@
     },
     "Corruption": {
       "Label": "Corruption",
+      "Abbr": "Cor",
       "Temporary": "Temp",
       "TemporaryFull": "Temporary",
       "Permanent": "Permanent",

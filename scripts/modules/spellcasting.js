@@ -1,6 +1,5 @@
-import { COMMON } from '../common.js';
-import { logger } from '../logger.js';
 import { SYB5E } from '../config.js';
+import { Corruption } from './corruption.js';
 
 /* Casting a Spell:
  * To cast a spell you take an appropriate action and gain tem-
@@ -17,65 +16,13 @@ export class Spellcasting {
 	static NAME = 'Spellcasting';
 
 	static register() {
-		this.patch();
+		//this.patch();
 		this.hooks();
 	}
 
-	static patch() {
-		this._patchAbilityUseDialog();
-	}
-
 	static hooks() {
-		Hooks.on('renderAbilityUseDialog', this._renderAbilityUseDialog);
-	}
-
-	static _patchAbilityUseDialog() {
-		const targetCls = dnd5e.applications.item.AbilityUseDialog;
-		const targetPath = 'dnd5e.applications.item.AbilityUseDialog';
-
-		const patch = {
-			_getSpellData: {
-				value: Spellcasting.getSpellData,
-				mode: 'WRAPPER',
-			},
-		};
-
-		COMMON.patch(targetCls, targetPath, patch);
-	}
-
-	static async getSpellData(wrapped, actorData, itemData, returnData) {
-		await wrapped(actorData, itemData, returnData);
-
-		const actor = returnData.item?.actor;
-
-		/* only modify the spell data if this is an syb actor */
-		if (actor?.isSybActor() ?? false) {
-			await Spellcasting._getSpellData(actor, itemData, returnData);
-		}
-
-		logger.debug('_getSpellData result:', returnData);
-	}
-
-	static _renderAbilityUseDialog(app, html /*, data*/) {
-		const actor = app.item?.actor;
-
-		/* only modify syb actors */
-		if (!actor || !actor.isSybActor()) return;
-
-		/* only modify spell use dialogs */
-		if (app.item?.type !== 'spell') return;
-
-		/* get all text elements */
-		const textNode = html[0].getElementsByTagName('input')?.consumeSpellSlot?.nextSibling;
-
-		if (!textNode) {
-			// logger.error(COMMON.localize('SYB5E.Error.HTMLParse'));
-      return;
-		}
-
-		textNode.textContent = COMMON.localize('SYB5E.Corruption.GainQuestion');
-
-		return;
+		Hooks.on('dnd5e.getItemContextOptions', Spellcasting._getContextMenuOptions);
+		Hooks.on('renderTidy5eCharacterSheetQuadrone', Spellcasting._renderFavoredSpellIcons)
 	}
 
 	/* MECHANICS HELPERS */
@@ -87,6 +34,42 @@ export class Spellcasting {
 	 *   we want to show the higest value
 	 * @param classData {array<classItemData>}
 	 */
+
+	static _getContextMenuOptions(item, options) {
+		if (item.type == "spell") {
+			var favored = item.system.favored;
+			options.push(
+				{
+					callback: () => {
+						item.update({ "system.favored": !!favored ? 0 : 1 });
+					},
+					group: "common",
+					icon: "<i class=\"fas fa-heart fa-fw\"></i>",
+					name: !!favored ? "Unfavor" : "Favor"
+				}
+			);
+		}
+		return options;
+
+	}
+
+	static _renderFavoredSpellIcons(app, html, data) {
+		const actor = app.actor;
+		if (!actor) return;
+
+		actor.items.forEach(item => {
+			if (item.type !== 'spell') return;
+			html.querySelectorAll(`.tidy-table-row-container[data-item-id="${item.id}"]`)
+				.forEach(x => {
+					if (Corruption.isFavored(item)) {
+						x.classList.add('favored-spell');
+					} else {
+						x.classList.remove('favored-spell');
+					}
+				});
+		});
+	}
+
 	static _maxSpellLevelByClass(classData = []) {
 		const maxLevel = classData.reduce(
 			(acc, cls) => {
@@ -141,11 +124,6 @@ export class Spellcasting {
 		return result;
 	}
 
-	static _isFavored(itemData) {
-		const favored = foundry.utils.getProperty(itemData, game.syb5e.CONFIG.PATHS.favored) ?? game.syb5e.CONFIG.DEFAULT_ITEM.favored;
-		return favored > 0;
-	}
-
 	static spellProgression(actor5e) {
 		const result =
 			actor5e.type == 'character' ? Spellcasting._maxSpellLevelByClass(Object.values(actor5e.classes)) : Spellcasting._maxSpellLevelNPC(actor5e.system);
@@ -165,146 +143,5 @@ export class Spellcasting {
 		for (const slot of levels) {
 			actor5e.system.spells[slot].max = Math.max(actor5e.system.spells[slot].max, 1);
 		}
-	}
-
-	static _generateCorruptionExpression(level, favored, prepMode) {
-		/* cantrips have a level of "0" (string) for some reason */
-		level = parseInt(level);
-
-		if (isNaN(level)) {
-			return false;
-		}
-
-		switch (prepMode) {
-			case 'atwill':
-			case 'innate':
-				return '0';
-		}
-
-		if (favored) {
-			/* favored cantrips cost 0, favored spells cost level */
-			return level == 0 ? '0' : `${level}`;
-		}
-
-		/* cantrips cost 1, leveled spells are 1d4+level */
-		return level == 0 ? '1' : `1d4 + ${level}`;
-	}
-
-	static _corruptionExpression(itemData, level = itemData.system.level) {
-		/* get default expression */
-		let expression = itemData.type === 'spell' ? Spellcasting._generateCorruptionExpression(level, Spellcasting._isFavored(itemData)) : '0';
-		let type = 'temp';
-
-		/* has custom corruption? */
-		const custom =
-			foundry.utils.getProperty(itemData, game.syb5e.CONFIG.PATHS.corruptionOverride.root) ??
-			foundry.utils.duplicate(game.syb5e.CONFIG.DEFAULT_ITEM.corruptionOverride);
-
-		/* modify the expression (always round up) minimum 1 unless custom */
-		if (custom.mode !== game.syb5e.CONFIG.DEFAULT_ITEM.corruptionOverride.mode) {
-			//has override
-			switch (custom.mode) {
-				case CONST.ACTIVE_EFFECT_MODES.ADD:
-					expression = `${expression} + (${custom.value})`;
-					break;
-				case CONST.ACTIVE_EFFECT_MODES.MULTIPLY:
-					expression = `(${expression}) * (${custom.value})`;
-					break;
-				case CONST.ACTIVE_EFFECT_MODES.OVERRIDE:
-					expression = custom.value;
-					break;
-			}
-		}
-
-		/* modify the target */
-		if (custom.type !== game.syb5e.CONFIG.DEFAULT_ITEM.corruptionOverride.type) {
-			type = custom.type;
-		}
-
-		/* after all modifications have been done, return the final expression */
-		return { expression, type };
-	}
-
-	/** \MECHANICS HELPERS **/
-
-	/** PATCH FUNCTIONS **/
-
-	static async _getSpellData(actor5e, itemData, returnData) {
-		let errors = [];
-		/****************
-		 * Needed Info:
-		 * - spellLevels: {array} of {level: 1, label: '1st Level (0 Slots)', canCast: true, hasSlots: false}
-		 * - errors: {array<string>}: clear out spell slot error from base dnd5e, add our own.
-		 *     - exceeding max spell level
-		 * - consumeSpellSlot: {boolean}: always true (consume slot = add corruption)
-		 * - canUse: {boolean}: always true? exceeding max corruption is a choice
-		 */
-
-		const maxLevel =
-			actor5e.system.details.cr == undefined
-				? Spellcasting._maxSpellLevelByClass(Object.values(actor5e.classes))
-				: Spellcasting._maxSpellLevelNPC(actor5e.system);
-		let spellLevels = [];
-
-		const addSpellLevel = (level) => {
-			spellLevels.push({
-				level,
-				label: COMMON.localize(`DND5E.SpellLevel${level}`) + ` (${Spellcasting._corruptionExpression(returnData.item, level).expression})`,
-				canCast: true,
-				hasSlots: true,
-			});
-		};
-
-		for (let level = itemData.level; level <= maxLevel.level; level++) {
-			addSpellLevel(level);
-		}
-
-		if (spellLevels.length < 1) {
-			errors.push(COMMON.localize('SYB5E.Error.SpellLevelExceedsMax'));
-
-			/* Add an entry for this spell in particular */
-			addSpellLevel(itemData.level);
-		}
-
-		/* generate current corruption status as a reminder */
-		const { value, max } = actor5e.corruption;
-		const note = COMMON.localize('SYB5E.Corruption.ShortDesc', { value, max });
-
-		const sybData = { note, errors, spellLevels, consumeSpellSlot: true, canUse: true };
-		foundry.utils.mergeObject(returnData, sybData);
-	}
-
-	static _getUsageUpdates(item, { consumeCorruption }, chatData) {
-		/* mirror core dnd5e structure */
-		//const actorUpdates = {};
-		const itemUpdates = {};
-
-		if (consumeCorruption) {
-			/* Does this item produce corruption? */
-			const corruptionInfo = item.corruption;
-
-			/* Generate and simplify rolldata strings for final rollable formula post-render */
-			const expression = new Roll(`${corruptionInfo.expression}`, item.getRollData()).evaluateSync({ strict: false, allowStrings: true }).formula;
-
-			/* store this corruption expression */
-			const lastCorruptionField = game.syb5e.CONFIG.PATHS.corruption.root + '.last';
-      foundry.utils.setProperty(chatData, lastCorruptionField, {
-				expression,
-				type: corruptionInfo.type,
-			});
-
-			/* temporarily set the gained corruption in the item data for use in damage roll expressions */
-			//foundry.utils.setProperty(item, lastCorruptionField, itemUpdates[lastCorruptionField]);
-
-			logger.debug('Cached corruption roll:', chatData[lastCorruptionField]);
-
-    } else {
-			/* clear out the previously stored corruption results, if any */
-			itemUpdates[game.syb5e.CONFIG.PATHS.delete.corruption] = null;
-			//item.updateSource({ [game.syb5e.CONFIG.PATHS.delete.corruption]: null });
-		}
-
-		/* some "fake" items dont have an ID, try to handle this... */
-		return { itemUpdates: !!item.id ? itemUpdates : {} };
 	}
 }

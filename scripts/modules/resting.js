@@ -58,7 +58,7 @@ export class Resting {
   static register() {
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
   static _getCorruptionRecovery(actor, type) {
     const currCorr = actor.corruption.temp;
@@ -68,7 +68,7 @@ export class Resting {
 
     const recovery = {
       [restTypes.short]: proficiency,
-      [restTypes.long]: 2*proficiency,
+      [restTypes.long]: 2 * proficiency,
       [restTypes.extended]: currCorr
     }[type];
 
@@ -76,65 +76,44 @@ export class Resting {
   }
 
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
-  static async _sybRest(actor, type, chat=true, newDay=false, dHd = 0, dHp = 0, dco = 0) {
-
-    const restTypes = game.syb5e.CONFIG.REST_TYPES;
-
-    /* get the appropriate "free" healing */
-    const {hitPointUpdates, hpGain} = Resting._getRestHitPointUpdate(actor, type);
-
-    /* get hit die recovery (full recovery ONLY on extended rest) */
-    const {updates: hitDiceUpdates, hitDiceRecovered} = type === restTypes.extended ? actor._getRestHitDiceRecovery({maxHitDice: actor.system.details.level}) : {updates: [], hitDiceRecovered: 0}
-
-    /* get corruption recovery 1x, 2x, full (short, long, ext) */
-    const recovery = Resting._getCorruptionRecovery(actor, type);
-    const corruptionUpdate = Resting._corruptionHealUpdate(actor.corruption, recovery);
-
-    /* get resource recovery */
-    const resourceUpdates = actor._getRestResourceRecovery({recoverShortRestResources: type === restTypes.short, recoverLongRestResources: type !== restTypes.short});
-
-    /* get item uses recovery */
-    const itemUseUpdates = await actor._getRestItemUsesRecovery({recoverLongRestUses: type !== restTypes.short, recoverDailyUses: newDay});
-
-    /* get extend rest item use recovery */
-    const erItemUseUpdates = type === restTypes.extended ? Resting.getErItemUsesRecovery(actor.items) : [];
+  static async _sybRest(actor, type, chat = true, newDay = false, dHd = 0, dHp = 0, dco = 0) {
 
     const result = {
-      dhp: dHp + hpGain,
-      dhd: Math.abs(dHd + hitDiceRecovered),
-      dco: dco + recovery,
-      actorUpdates: {
-        ...hitPointUpdates,
-        ...resourceUpdates,
-        ...corruptionUpdate,
+      type: type,
+      deleteItems: [],
+      deltas: {
+        hitPoints: 0,
+        hitDice: 0
       },
-      itemUpdates: [
-        ...hitDiceUpdates,
-        ...itemUseUpdates,
-        ...erItemUseUpdates,
-      ],
-      longRest: type === restTypes.long, //emulating core field here
-      restType: type, //the actual syb rest type
-      newDay
+      newDay: newDay,
+      request: true,
+      rolls: [],
+      updateData: {},
+      updateItems: []
     };
 
-    /* Perform updates */
+    const restTypes = game.syb5e.CONFIG.REST_TYPES;
+    Resting._getRestHitPointUpdate(actor, type, result);
+    type === restTypes.extended && actor._getRestHitDiceRecovery({ maxHitDice: actor.system.details.level, type: "long" }, result);
+    const recovery = Resting._getCorruptionRecovery(actor, type);
+    Resting._corruptionHealUpdate(actor.corruption, recovery, result);
+    actor._getRestResourceRecovery({ recoverShortRestResources: type === restTypes.short, recoverLongRestResources: type !== restTypes.short }, result);
+    await actor._getRestItemUsesRecovery({ type: type === restTypes.extended ? "long" : type, recoverLongRestUses: type !== restTypes.short, recoverDailyUses: newDay }, result);
+    if (type === restTypes.extended) await Resting.getErItemUsesRecovery(actor.items, result);
+
     await actor.update(result.actorUpdates);
     await actor.updateEmbeddedDocuments("Item", result.itemUpdates);
 
-    /* show chat message summarizing results, if requested */
-    if ( chat ) await Resting._displayRestResultMessage(result, actor);
+    if (chat) await Resting._displayRestResultMessage(result, actor);
 
-    // Call restCompleted hook so that modules can easily perform actions when actors finish a rest
-    Hooks.callAll("restCompleted", actor, result);
+    Hooks.callAll("dnd5e.restCompleted", actor, result, {});
 
-    // Return data summarizing the rest effects
     return result;
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
   static async _displayRestResultMessage(result, actor) {
     /***********************************
@@ -152,22 +131,22 @@ export class Resting {
 
     // Summarize the rest duration
     switch (result.restType) {
-      case game.syb5e.CONFIG.REST_TYPES.short: 
+      case game.syb5e.CONFIG.REST_TYPES.short:
         restFlavor = "DND5E.ShortRestNormal";
         length = "Short";
         break;
-      case game.syb5e.CONFIG.REST_TYPES.long: 
+      case game.syb5e.CONFIG.REST_TYPES.long:
         restFlavor = newDay ? "DND5E.LongRestOvernight" : "DND5E.LongRestNormal";
         length = "Long";
         break;
-      case game.syb5e.CONFIG.REST_TYPES.extended: 
+      case game.syb5e.CONFIG.REST_TYPES.extended:
         restFlavor = newDay ? "SYB5E.Rest.Flavor.ExtendedRestOvernight" : "SYB5E.Rest.Flavor.ExtendedRestNormal";
         length = "Extended"
         break;
     }
 
     /* create the message based on if anything was spent or recovered */
-    if ( diceRestored || healthRestored || corruptionRestored ) {
+    if (diceRestored || healthRestored || corruptionRestored) {
       message = `SYB5E.Rest.Results.${length}Full`
     } else {
       /* no hit die or health was restored for this rest */
@@ -177,7 +156,7 @@ export class Resting {
     // Create a chat message
     let chatData = {
       user: game.user.id,
-      speaker: {actor, alias: actor.name},
+      speaker: { actor, alias: actor.name },
       flavor: game.i18n.localize(restFlavor),
       content: game.i18n.format(message, {
         name: actor.name,
@@ -190,21 +169,30 @@ export class Resting {
     return ChatMessage.create(chatData);
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
-  static getErItemUsesRecovery(items) {
+  static async getErItemUsesRecovery(items, result) {
     /* collect any item with 'er' type recharge */
     const type = 'er';
-
-    const erItems = items.filter( i => i.system.uses?.per === type );
-    const updates = erItems.map( item => { return { _id: item.id, 'system.uses.value': item.system.uses.max } } );
-
-    return updates;
+    for (const item of items.filter(i => i.system.uses?.recovery.some(r => r.type === type))) {
+      if ((item.dependentOrigin?.active === false)
+        || (foundry.utils.getType(item.system.recoverUses) !== "function")) continue;
+      const rollData = item.getRollData();
+      const { updates, rolls, destroy } = await item.system.recoverUses(recovery, rollData);
+      if (destroy) {
+        result.deleteItems.push(item.id);
+      } else if (!foundry.utils.isEmpty(updates)) {
+        const updateTarget = result.updateItems.find(i => i._id === item.id);
+        if (updateTarget) foundry.utils.mergeObject(updateTarget, updates);
+        else result.updateItems.push({ _id: item.id, ...updates });
+      }
+      result.rolls.push(...rolls);
+    }
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
-  static _restHpGain( actor, type ) {
+  static _restHpGain(actor, type) {
 
     const restTypes = game.syb5e.CONFIG.REST_TYPES;
     const actor5eData = actor.system;
@@ -218,8 +206,8 @@ export class Resting {
         /* Now find largest Hit Die (tries to accomodate for multiclassing in SYB
          * despite the fact that none should exist)
          */
-        const hitDieSize = actor.itemTypes.class.reduce( (acc, item) => {
-          const dieSize = parseInt(item.system.hitDice.slice(1))
+        const hitDieSize = Object.entries(actor.classes).reduce((acc, [key, cls]) => {
+          const dieSize = parseInt(cls.system.hd.denomination.slice(1))
           return dieSize > acc ? dieSize : acc;
         }, 0);
 
@@ -235,76 +223,61 @@ export class Resting {
 
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
-  static _getRestHitPointUpdate(actor, type) {
+  static _getRestHitPointUpdate(actor, type, result) {
 
     const rawHpGain = Resting._restHpGain(actor, type);
     const clampedFinalHp = Math.min(rawHpGain + actor.system.attributes.hp.value, actor.system.attributes.hp.max);
-    const hpGain = clampedFinalHp - actor.system.attributes.hp.value;
 
     const hitPointUpdates = {
       "system.attributes.hp.value": clampedFinalHp
     }
 
-    return {hitPointUpdates, hpGain}
+    result.actorUpdates = hitPointUpdates;
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
-  static _corruptionHealUpdate(currentCorruption, amount) {
-
+  static _corruptionHealUpdate(currentCorruption, amount, result) {
     const newTemp = Math.max(currentCorruption.temp - amount, 0)
-    return {
-      [game.syb5e.CONFIG.PATHS.corruption.temp]: newTemp
-    }
-
+    result.actorUpdates[game.syb5e.CONFIG.PATHS.corruption.temp] = newTemp;
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
   static async corruptionHeal(actor, amount) {
-    
-    const update = Resting._corruptionHealUpdate(actor.corruption, amount)
-
-    await actor.update(update);
+    var result = { actorUpdates: {} };
+    Resting._corruptionHealUpdate(actor.corruption, amount, result);
+    await actor.update(result);
   }
 
-/* -------------------------------------------- */
+  /* -------------------------------------------- */
 
   static async expendHitDie(actor, denomination) {
-
-    //FROM DND5E/entity.js#rollHitDie
-
-    // If no denomination was provided, choose the first available
-    let cls = null;
+    var cls = null;
     if (!denomination) {
-      cls = actor.itemTypes.class.find(c => c.system.hitDiceUsed < c.system.levels);
-      if (!cls) return null;
-      denomination = cls.system.hitDice;
+      cls = actor.system.attributes.hd.classes.find(c => c.system.hd.value);
+      if (!cls) return false;
+      denomination = cls.system.hd.denomination;
     }
 
-    // Otherwise locate a class (if any) which has an available hit die of the requested denomination
-    else {
-      cls = actor.items.find(i => {
-        const d = i.system
-        return (d.hitDice === denomination) && ((d.hitDiceUsed || 0) < (d.levels || 1));
-      });
-    }
+    // Otherwise, locate a class (if any) which has an available hit die of the requested denomination
+    else cls = actor.system.attributes.hd.classes.find(i => {
+      return (i.system.hd.denomination === denomination) && i.system.hd.value;
+    });
 
     // If no class is available, display an error notification
     if (!cls) {
-      ui.notifications.error(game.i18n.format("DND5E.HitDiceWarn", {
-        name: actor.name,
-        formula: denomination
-      }));
-      return null;
+      ui.notifications.error(game.i18n.format("DND5E.HitDiceWarn", { name: actor.name, formula: denomination }));
+      return false;
     }
-
     // Adjust actor data
     await cls.update({
-      "system.hitDiceUsed": cls.system.hitDiceUsed + 1
+      "system.hd.spent": cls.system.hd.spent + 1
     });
+
+    return true;
   }
 }
 

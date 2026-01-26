@@ -21,14 +21,6 @@ export class ActorSyb5e {
 				value: ActorSyb5e.getRollData,
 				mode: 'WRAPPER',
 			},
-			prepareBaseData: {
-				value: ActorSyb5e.prepareBaseData,
-				mode: 'WRAPPER',
-			},
-			prepareDerivedData: {
-				value: ActorSyb5e.prepareDerivedData,
-				mode: 'WRAPPER',
-			},
 			longRest: {
 				value: ActorSyb5e.longRest,
 			},
@@ -62,6 +54,26 @@ export class ActorSyb5e {
 		};
 
 		COMMON.patch(target, targetPath, patches);
+		this.patchDataModel();
+	}
+
+	static patchDataModel() {
+		const CharacterData = dnd5e.dataModels?.actor?.CharacterData;
+		if (!CharacterData) return;
+
+		const original = CharacterData.defineSchema;
+		CharacterData.defineSchema = function () {
+			const schema = original.call(this);
+			schema.corruption = new foundry.data.fields.SchemaField({
+				value: new foundry.data.fields.NumberField({ required: true, nullable: false, integer: true, initial: 0, min: 0 }),
+				max: new foundry.data.fields.NumberField({ required: true, nullable: false, integer: true, initial: 0, min: 0 }),
+				temp: new foundry.data.fields.NumberField({ required: true, nullable: false, integer: true, initial: 0, min: 0 }),
+				permanent: new foundry.data.fields.NumberField({ required: true, nullable: false, integer: true, initial: 0, min: 0 }),
+				ability: new foundry.data.fields.StringField({ required: true, nullable: false, initial: "cha" }),
+				bonus: new foundry.data.fields.NumberField({ required: true, nullable: false, integer: true, initial: 0 })
+			});
+			return schema;
+		}
 	}
 
 	/* -------------------------------------------- */
@@ -85,26 +97,6 @@ export class ActorSyb5e {
 		return data;
 	}
 
-	/* -------------------------------------------- */
-
-	/* @override */
-	static prepareBaseData(wrapped, ...args) {
-		wrapped?.(...args);
-
-		if (this.isSybActor()) {
-			ActorSyb5e._prepareCommonData(this);
-			switch (this.type) {
-				case 'character':
-					break;
-				case 'npc':
-					ActorSyb5e._prepareNpcData(this);
-					break;
-			}
-		}
-	}
-
-	/* -------------------------------------------- */
-
 	/* @override */
 	static prepareDerivedData(wrapped, ...args) {
 		/* perform normal steps */
@@ -112,9 +104,6 @@ export class ActorSyb5e {
 
 		if (this.isSybActor()) {
 			logger.debug('core derived data:', this);
-
-			/* prepare derived corruption data */
-			foundry.utils.setProperty(this, game.syb5e.CONFIG.PATHS.corruption.root, this.corruption);
 
 			/* check for half caster and "fix" for syb5e half-caster progression */
 			Spellcasting._modifyDerivedProgression(this);
@@ -190,28 +179,22 @@ export class ActorSyb5e {
 
 	/* -------------------------------------------- */
 
-	static _prepareCommonData(actor) {
-		foundry.utils.setProperty(actor, game.syb5e.CONFIG.PATHS.shadow, actor.shadow);
-	}
-
-	/* -------------------------------------------- */
-
-	static _prepareNpcData(actor) {
-		foundry.utils.setProperty(actor, game.syb5e.CONFIG.PATHS.manner, actor.manner);
-	}
-
-	/* -------------------------------------------- */
-
 	static getCorruption() {
-		/* current value */
-		let corruption = this.getFlag(COMMON.DATA.name, 'corruption') ?? {};
+		/* Try to get from system data (Schema injection) */
+		if (this.system.corruption) {
+			const corruption = this.system.corruption;
 
-		/* correct bad values and merge in needed defaults */
-		corruption = foundry.utils.mergeObject(game.syb5e.CONFIG.DEFAULT_FLAGS.corruption, corruption, { inplace: false });
+			// Ensure we have defaults if somehow missing (though schema handles this)
+			if (corruption.temp === undefined) corruption.temp = 0;
+			if (corruption.permanent === undefined) corruption.permanent = 0;
 
-		corruption.value = corruption.temp + corruption.permanent;
-		corruption.max = ActorSyb5e._calcMaxCorruption(this);
-		return corruption;
+			// Calculate derived values
+			corruption.value = corruption.temp + corruption.permanent;
+			corruption.max = ActorSyb5e._calcMaxCorruption(this);
+
+			return corruption;
+		}
+		return null;
 	}
 
 	/* -------------------------------------------- */
@@ -307,13 +290,8 @@ export class ActorSyb5e {
 	/* -------------------------------------------- */
 
 	static isSybActor() {
-		let sheetClassId = this.getFlag('core', 'sheetClass');
-		if (!sheetClassId) {
-			/* find the default sheet class */
-			sheetClassId = Object.values(CONFIG.Actor.sheetClasses[this.type] ?? []).find((info) => info.default)?.id;
-		}
-		const found = game.syb5e.sheetClasses.find((classInfo) => classInfo.id === sheetClassId);
-		return !!found;
+		var retval = this.getFlag(COMMON.DATA.name, 'syb5eActor') ?? false;
+		return retval;
 	}
 
 	/* -------------------------------------------- */

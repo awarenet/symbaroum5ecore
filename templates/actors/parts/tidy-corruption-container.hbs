@@ -1,0 +1,33 @@
+{{#if isSybActor}}
+<div data-tidy-sheet-part="ability-container" class="ability corruption">
+    <div class="ability-bonus-container">
+        <div data-tidy-sheet-part="ability-mod-container" class="bonus-container"
+            style="border-color: var(--t5e-corruption-color, #4a0d0d);">
+            <button type="button" class="button-borderless ability-roll-button label font-label-medium color-text-gold"
+                data-tidy-sheet-part="ability-roller" data-tooltip="{{localize 'SYB5E.Corruption.Label'}}"
+                style="cursor: default">
+                {{localize "SYB5E.Corruption.Abbr"}}
+            </button>
+            <div class="flexrow">
+                <span data-tidy-sheet-part="ability-value" class="value bonus font-data-xlarge color-text-default"
+                    data-tooltip="{{localize 'SYB5E.Corruption.Temporary'}}: {{actor.corruption.temp}} + {{localize 'SYB5E.Corruption.Permanent'}}: {{actor.corruption.permanent}}">
+                    {{actor.corruption.value}}
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="ability-score-container">
+        <label data-tidy-sheet-part="ability-score" class="ability-score"
+            data-tooltip="{{localize 'SYB5E.Corruption.Permanent'}}">
+            <span class="font-title-small color-text-default">{{actor.corruption.permanent}}</span>
+        </label>
+    </div>
+    <div class="ability-save-container">
+        <button type="button" data-tidy-sheet-part="ability-save-roller" class="button-borderless ability-save flexrow"
+            style="cursor: default" data-tooltip="{{localize 'SYB5E.Corruption.Threshold'}}">
+            <span class="value save font-data-medium color-text-default">{{actor.corruption.max}}</span>
+            <span class="icon"><i class="fas fa-biohazard"></i></span>
+        </button>
+    </div>
+</div>
+{{/if}}

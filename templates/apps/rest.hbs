@@ -1,0 +1,50 @@
+<div class="standard-form dnd5e2">
+    {{#unless isExtended}}
+    <div class="form-group">
+        <fieldset>
+            <legend>Use Hit Dice</legend>
+            <label for="hd">Denomination</label>
+            <select name="hd">
+                {{#select denomination}}
+                {{#each denominations}}
+                <option value="{{hitDice}}">{{hitDice}} ({{available}} available)</option>
+                {{/each}}
+                {{/select}}
+            </select>
+            <div class="rest-roll-buttons flexrow" style="margin-bottom:5px;">
+                <button id="roll-hd" {{#unless canRoll}}disabled{{/unless}}>
+                    <i class="fas fa-dice-d20"></i> Hit Points
+                </button>
+                <button id="heal-corr" {{#unless canRoll}}disabled{{/unless}}>
+                    <i class="fas fa-dice-d20"></i> Corruption
+                </button>
+            </div>
+        </fieldset>
+    </div>
+    <div class="form-group">
+        <label>Result Preview</label>
+        <div class="sheet" style="align-items:center;">
+            {{#unless isShort}}
+            <p><strong>HP:</strong> {{preview.hp}} / {{preview.maxHp}}</p>
+            {{/unless}}
+            <p><strong>Corruption:</strong> {{preview.tempCorr}} ({{preview.totalCorr}}) / {{preview.maxCorr}}</p>
+        </div>
+    </div>
+    {{/unless}}
+
+    {{#if promptNewDay}}
+    <div class="form-group">
+        <label>New Day</label>
+        <input type="checkbox" name="newDay" />
+    </div>
+    {{/if}}
+
+    <div class="form-footer">
+        <button type="submit" class="save">
+            <i class="fas fa-check"></i> Rest
+        </button>
+        <button type="button" data-action="cancel">
+            <i class="fas fa-times"></i> Cancel
+        </button>
+    </div>
+</div>
