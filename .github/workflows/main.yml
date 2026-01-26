@@ -18,6 +18,12 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
+        # 3. Install the FoundryVTT CLI.
+      - run: npm install -g @foundryvtt/foundryvtt-cli
+        # 4. Configure the datapath as the github workspace variable.
+      - run: fvtt configure set "dataPath" ${GITHUB_WORKSPACE}
+        # 5. Tell the FVTT CLI that we are working on a "system" package.
+      - run: fvtt package workon fvtt package workon "symbaroum5ecore" --type "Module"
 
       # Substitute the Manifest and Download URLs in the module.json
       # for a FULL RELEASE
