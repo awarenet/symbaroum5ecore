@@ -11,6 +11,7 @@ export class SYB5E {
     this.globals();
     this.templates();
     this.hooks();
+    this.settings();
   }
 
   static get CONFIG() {
@@ -36,6 +37,15 @@ export class SYB5E {
       restricted: false,
     });
 
+    const settingsData = {
+      useSymbaroumCurrency: {
+        scope: "world",
+        config: false,
+        default: true,
+        type: Boolean,
+      },
+    };
+
     COMMON.applySettings(settingsData);
   }
 
@@ -44,7 +54,22 @@ export class SYB5E {
   }
 
   static _preTranslateConfig() {
-    globalThis.game.dnd5e.config.limitedUsePeriods.er = COMMON.localize('SYB5E.Rest.Extended');
+    globalThis.game.dnd5e.config.limitedUsePeriods.er = {
+      "label": COMMON.localize('SYB5E.Rest.Extended'),
+      "abbreviation": "ER"
+    };
+
+    /* Add in "Extended Rest" type */
+    globalThis.game.dnd5e.config.restTypes.ext = {
+      label: COMMON.localize('SYB5E.Rest.Extended'),
+      duration: { normal: 1440, gritty: 10080, epic: 60 },
+      recoverPeriods: ['er', 'lr', 'sr'],
+      icon: 'fas fa-bed',
+      recoverHitDice: true,
+      recoverHitPoints: true,
+      recoverTemp: true,
+      recoverTempMax: true,
+    };
 
     /* Add in "Greater Artifact" rarity for items */
     globalThis.game.dnd5e.config.itemRarity.greaterArtifact = COMMON.localize('SYB5E.Item.Rarity.GreaterArtifact');
@@ -131,6 +156,20 @@ export class SYB5E {
       cp: 'SYB5E.Currency.Orteg',
     });
 
+    /* Apply currency overrides to dnd5e config */
+    if (COMMON.setting('useSymbaroumCurrency')) {
+      for (const [key, label] of Object.entries(globalThis.game.syb5e.CONFIG.CURRENCY)) {
+        if (globalThis.game.dnd5e.config.currencies[key]) {
+          if (typeof globalThis.game.dnd5e.config.currencies[key] === "object") {
+            globalThis.game.dnd5e.config.currencies[key].label = label;
+            globalThis.game.dnd5e.config.currencies[key].abbreviation = label;
+          } else {
+            globalThis.game.dnd5e.config.currencies[key] = label;
+          }
+        }
+      }
+    }
+
 
 
   }
@@ -152,13 +191,6 @@ export class SYB5E {
       'SYB5E.Level.Eighth',
       'SYB5E.Level.Nineth',
     ];
-
-    /* 3 rest types for syb */
-    globalThis.game.syb5e.CONFIG.REST_TYPES = {
-      short: 'short',
-      long: 'long',
-      extended: 'ext',
-    };
 
     /* Map the weapon type key (alchemical) to the proficiency key (alc) */
     globalThis.game.dnd5e.config.weaponProficienciesMap.alchemical = 'alc';

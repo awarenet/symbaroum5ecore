@@ -50,7 +50,6 @@ export class Spellcasting {
 			);
 		}
 		return options;
-
 	}
 
 	static _renderFavoredSpellIcons(app, html, data) {

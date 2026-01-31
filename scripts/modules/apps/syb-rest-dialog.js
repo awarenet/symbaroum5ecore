@@ -1,7 +1,6 @@
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 import { Resting } from '../resting.js';
-import { COMMON } from '../../common.js';
 
 export class SybRestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
 	constructor(options = {}) {
@@ -48,15 +47,10 @@ export class SybRestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
 		context.availableHD = this.actor.system.attributes.hd;
 		context.denomination = this._denom;
 
-		const restTypes = game.syb5e.CONFIG.REST_TYPES;
+		const restTypes = game.dnd5e.config.restTypes;
+		this.window.title = this.type?.label ?? "Rest";
 
-		context.restHint = {
-			[restTypes.short]: 'SYB5E.Rest.ShortHint',
-			[restTypes.long]: 'SYB5E.Rest.LongHint',
-			[restTypes.extended]: 'SYB5E.Rest.ExtendedHint',
-		}[this.type];
-
-		context.isExtended = this.type === restTypes.extended;
+		context.isExtended = this.type === restTypes.ext;
 		context.isShort = this.type === restTypes.short;
 		context.promptNewDay = this.type !== restTypes.short;
 
@@ -76,9 +70,6 @@ export class SybRestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
 		context.preview.totalCorr = context.preview.tempCorr + corruption.permanent;
 		context.preview.hp = Math.min(context.preview.hp, context.preview.maxHp);
 
-		/* Title update */
-		this.window.title = this._getDialogTitle();
-
 		/* Replicating dnd5e short rest data structure if needed by template */
 		context.canRoll = context.availableHD.value > 0;
 		/* 
@@ -94,19 +85,6 @@ export class SybRestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
 		}).filter(d => d.available > 0);
 
 		return context;
-	}
-
-	_getDialogTitle() {
-		switch (this.type) {
-			case game.syb5e.CONFIG.REST_TYPES.short:
-				return `Short Rest: ${this.actor.name}`;
-			case game.syb5e.CONFIG.REST_TYPES.long:
-				return `Long Rest: ${this.actor.name}`;
-			case game.syb5e.CONFIG.REST_TYPES.extended:
-				return `Extended Rest: ${this.actor.name}`;
-			default:
-				return "Rest";
-		}
 	}
 
 	/** @override */

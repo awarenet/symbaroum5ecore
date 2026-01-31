@@ -9,6 +9,13 @@ export class Tidy5eIntegration {
             Tidy5eIntegration.registerCorruption(api);
             Tidy5eIntegration.registerExtRest(api);
         });
+        if (COMMON.setting('useSymbaroumCurrency')) {
+            Hooks.on('renderActorSheetV2', (app, element, data, forced) => {
+                // remove unused currency fields
+                document.querySelector('.currency-container .input-group:has(input[data-tidy-field="system.currency.pp"])').style.display = 'none';
+                document.querySelector('.currency-container .input-group:has(input[data-tidy-field="system.currency.ep"])').style.display = 'none';
+            });
+        }
     }
 
     // Corruption ability bar

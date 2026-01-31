@@ -15,7 +15,7 @@ export class ItemSyb5e {
 		//Hooks.on('dnd5e.preDisplayCard', this.flagWithCorruption);
 		Hooks.on('dnd5e.preItemUsageConsumption', this.swapCorruptionConsumption);
 		Hooks.on('dnd5e.itemUsageConsumption', this.generateCorruptionUsage);
-		Hooks.on('dnd5e.renderChatMessage', this.applyCorruption);
+		Hooks.on('renderChatMessageHTML', this.applyCorruption);
 		//Hooks.on('renderChatLog', this.setChatListeners)
 	}
 

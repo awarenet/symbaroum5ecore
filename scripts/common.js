@@ -38,7 +38,7 @@ export class COMMON {
   /** HELPER FUNCTIONS **/
   static setting(key, value = null) {
 
-    if (value) {
+    if (value !== null) {
       return game.settings.set(COMMON.DATA.name, key, value);
     }
 

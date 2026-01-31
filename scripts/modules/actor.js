@@ -125,7 +125,7 @@ export class ActorSyb5e {
 		// Maybe present a confirmation dialog
 		if (dialog) {
 			try {
-				newDay = await SybRestDialog.restDialog({ actor: this, type: game.syb5e.CONFIG.REST_TYPES.long });
+				newDay = await SybRestDialog.restDialog({ actor: this, type: game.dnd5e.config.restTypes.long });
 			} catch (err) {
 				if (err == 'cancelled') logger.debug('Rest dialog cancelled.');
 				return false;
@@ -135,7 +135,7 @@ export class ActorSyb5e {
 		//do long rest
 		await Resting._sybRest(
 			this,
-			game.syb5e.CONFIG.REST_TYPES.long,
+			game.dnd5e.config.restTypes.long,
 			chat,
 			newDay,
 			this.system.attributes.hd - initHd,
@@ -158,7 +158,7 @@ export class ActorSyb5e {
 		// Maybe present a confirmation dialog
 		if (dialog) {
 			try {
-				await SybRestDialog.restDialog({ actor: this, type: game.syb5e.CONFIG.REST_TYPES.short });
+				await SybRestDialog.restDialog({ actor: this, type: game.dnd5e.config.restTypes.short });
 			} catch (err) {
 				if (err == 'cancelled') logger.debug('Rest dialog cancelled.');
 				return false;
@@ -168,7 +168,7 @@ export class ActorSyb5e {
 		//do extended rest
 		await Resting._sybRest(
 			this,
-			game.syb5e.CONFIG.REST_TYPES.short,
+			game.dnd5e.config.restTypes.short,
 			chat,
 			false,
 			this.system.attributes.hd - initHd,
@@ -247,39 +247,24 @@ export class ActorSyb5e {
 	static _calcMaxCorruption(actor) {
 		const CONFIG = game.syb5e.CONFIG;
 		const paths = CONFIG.PATHS;
-		const defaultAbility = game.syb5e.CONFIG.DEFAULT_FLAGS.corruption.ability;
-		let corruptionAbility = foundry.utils.getProperty(actor, paths.corruption.ability) ?? defaultAbility;
-		/* if we are in a custom max mode, just return the current stored max */
-		const currentMax = foundry.utils.getProperty(actor, paths.corruption.max) ?? game.syb5e.CONFIG.DEFAULT_FLAGS.corruption.max;
-		const currentBonus = dnd5e.utils.simplifyBonus(
-			(foundry.utils.getProperty(actor, paths.corruption.bonus) ?? 0)
-		);
-
+		let corruptionAbility = foundry.utils.getProperty(actor, paths.corruption.ability);
 		/* handle special cases */
 		switch (corruptionAbility) {
 			case 'custom':
-				return currentMax;
+				return foundry.utils.getProperty(actor, paths.corruption.max);
 			case 'thorough':
 				return 0;
-			case 'spellcasting': {
-				/* if corruption is set to use spellcasting, ensure we have a spellcasting stat as well */
-				corruptionAbility = !!actor.system.attributes.spellcasting ? corruptionAbility : defaultAbility;
-			}
 		}
-
-		const usesSpellcasting = corruptionAbility === 'spellcasting';
 
 		/* otherwise determine corruption calc -- full casters get a special one */
+
+		const corrMod = actor.system.abilities[corruptionAbility].mod ?? 0;
+		const prof = actor.system.attributes.prof ?? 0;
+		const currentBonus = dnd5e.utils.simplifyBonus(
+			(foundry.utils.getProperty(actor, paths.corruption.bonus) ?? 0)
+		);
 		const { fullCaster } =
 			actor.type === 'character' ? Spellcasting._maxSpellLevelByClass(Object.values(actor.classes)) : Spellcasting._maxSpellLevelNPC(actor.system);
-
-		const prof = actor.system.attributes.prof ?? currentMax;
-		if (prof == null) {
-			logger.error('SYB5E.Error.NoProf');
-		}
-
-		const corrAbility = usesSpellcasting ? actor.system.attributes.spellcasting : corruptionAbility;
-		const corrMod = actor.system.abilities[corrAbility].mod ?? 0;
 
 		/* we can only apply a bonus to an automatically computed maximum (i.e. derived from attributes) */
 		const rawMax = fullCaster ? (prof + corrMod) * 2 : Math.max(corrMod + prof * 2, 2);
@@ -304,7 +289,7 @@ export class ActorSyb5e {
 		// Maybe present a confirmation dialog
 		if (dialog) {
 			try {
-				newDay = await SybRestDialog.restDialog({ actor: this, type: game.syb5e.CONFIG.REST_TYPES.extended });
+				newDay = await SybRestDialog.restDialog({ actor: this, type: game.dnd5e.config.restTypes.ext });
 			} catch (err) {
 				if (err == 'cancelled') logger.debug('Rest dialog cancelled.');
 				return false;
@@ -312,7 +297,7 @@ export class ActorSyb5e {
 		}
 
 		//do extended rest
-		await Resting._sybRest(this, game.syb5e.CONFIG.REST_TYPES.extended, chat, newDay);
+		await Resting._sybRest(this, game.dnd5e.config.restTypes.ext, chat, newDay);
 	}
 
 	/* handles the "soulless" trait */

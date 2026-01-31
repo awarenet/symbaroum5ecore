@@ -7,7 +7,7 @@ export class SybCorruptionDialog extends HandlebarsApplicationMixin(ApplicationV
     static DEFAULT_OPTIONS = {
         tag: "form",
         id: "syb-corruption-dialog",
-        classes: ["syb5e", "corruption-dialog"],
+        classes: ["dnd5e2", "syb5e", "corruption-dialog"],
         window: {
             title: "SYB5E.Corruption.Label",
             icon: "fas fa-biohazard",
@@ -47,7 +47,9 @@ export class SybCorruptionDialog extends HandlebarsApplicationMixin(ApplicationV
     static async onSubmit(event, form, formData) {
         const updateData = {
             [game.syb5e.CONFIG.PATHS.corruption.temp]: formData.object.temp,
-            [game.syb5e.CONFIG.PATHS.corruption.permanent]: formData.object.permanent
+            [game.syb5e.CONFIG.PATHS.corruption.permanent]: formData.object.permanent,
+            [game.syb5e.CONFIG.PATHS.corruption.bonus]: formData.object.bonus,
+            [game.syb5e.CONFIG.PATHS.corruption.max]: formData.object.max,
         };
         await this.document.update(updateData);
     }

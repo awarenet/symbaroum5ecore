@@ -64,12 +64,12 @@ export class Resting {
     const currCorr = actor.corruption.temp;
     const proficiency = actor.system.attributes.prof;
 
-    const restTypes = game.syb5e.CONFIG.REST_TYPES;
+    const restTypes = game.dnd5e.config.restTypes;
 
     const recovery = {
       [restTypes.short]: proficiency,
       [restTypes.long]: 2 * proficiency,
-      [restTypes.extended]: currCorr
+      [restTypes.ext]: currCorr
     }[type];
 
     return Math.min(recovery, currCorr);
@@ -85,7 +85,8 @@ export class Resting {
       deleteItems: [],
       deltas: {
         hitPoints: 0,
-        hitDice: 0
+        hitDice: 0,
+        corruption: 0
       },
       newDay: newDay,
       request: true,
@@ -94,17 +95,22 @@ export class Resting {
       updateItems: []
     };
 
-    const restTypes = game.syb5e.CONFIG.REST_TYPES;
+    const restTypes = game.dnd5e.config.restTypes;
+    let typeKey = null;
+    switch (type) {
+      case restTypes.short: typeKey = "short"; break;
+      case restTypes.long: typeKey = "long"; break;
+      case restTypes.ext: typeKey = "ext"; break;
+    }
     Resting._getRestHitPointUpdate(actor, type, result);
-    type === restTypes.extended && actor._getRestHitDiceRecovery({ maxHitDice: actor.system.details.level, type: "long" }, result);
+    type === restTypes.ext && actor._getRestHitDiceRecovery({ maxHitDice: actor.system.details.level, type: typeKey }, result);
     const recovery = Resting._getCorruptionRecovery(actor, type);
     Resting._corruptionHealUpdate(actor.corruption, recovery, result);
     actor._getRestResourceRecovery({ recoverShortRestResources: type === restTypes.short, recoverLongRestResources: type !== restTypes.short }, result);
-    await actor._getRestItemUsesRecovery({ type: type === restTypes.extended ? "long" : type, recoverLongRestUses: type !== restTypes.short, recoverDailyUses: newDay }, result);
-    if (type === restTypes.extended) await Resting.getErItemUsesRecovery(actor.items, result);
+    await actor._getRestItemUsesRecovery({ type: typeKey, recoverDailyUses: newDay }, result);
 
     await actor.update(result.actorUpdates);
-    await actor.updateEmbeddedDocuments("Item", result.itemUpdates);
+    await actor.updateEmbeddedDocuments("Item", result.updateItems);
 
     if (chat) await Resting._displayRestResultMessage(result, actor);
 
@@ -120,81 +126,61 @@ export class Resting {
      * In large part based on 
      * Actor5e#_displayRestResultMessage
      **********************************/
-    const { dhd, dhp, dco, newDay } = result;
-    const diceRestored = dhd !== 0;
-    const healthRestored = dhp !== 0;
-    const corruptionRestored = dco !== 0
+    const { hitDice, hitPoints, corruption } = result.deltas;
+    const restTypes = game.dnd5e.config.restTypes;
 
-    let length = ''
+    // Define the message key and flavor based on the rest type
+    let messageKey;
     let restFlavor;
-    let message = false;
 
-    // Summarize the rest duration
-    switch (result.restType) {
-      case game.syb5e.CONFIG.REST_TYPES.short:
-        restFlavor = "DND5E.ShortRestNormal";
-        length = "Short";
+    switch (result.type) {
+      case restTypes.short:
+        restFlavor = "SYB5E.Rest.Flavor.Short";
+        messageKey = "SYB5E.Rest.Results.Short";
         break;
-      case game.syb5e.CONFIG.REST_TYPES.long:
-        restFlavor = newDay ? "DND5E.LongRestOvernight" : "DND5E.LongRestNormal";
-        length = "Long";
+      case restTypes.long:
+        restFlavor = result.newDay ? "SYB5E.Rest.Flavor.LongOvernight" : "SYB5E.Rest.Flavor.Long";
+        messageKey = "SYB5E.Rest.Results.Long";
         break;
-      case game.syb5e.CONFIG.REST_TYPES.extended:
-        restFlavor = newDay ? "SYB5E.Rest.Flavor.ExtendedRestOvernight" : "SYB5E.Rest.Flavor.ExtendedRestNormal";
-        length = "Extended"
+      case restTypes.ext:
+        restFlavor = result.newDay ? "SYB5E.Rest.Flavor.ExtendedRestOvernight" : "SYB5E.Rest.Flavor.ExtendedRestNormal";
+        messageKey = "SYB5E.Rest.Results.ExtendedShort";
         break;
     }
 
-    /* create the message based on if anything was spent or recovered */
-    if (diceRestored || healthRestored || corruptionRestored) {
-      message = `SYB5E.Rest.Results.${length}Full`
-    } else {
-      /* no hit die or health was restored for this rest */
-      message = length !== "Extended" ? `DND5E.${length}RestResultShort` : "SYB5E.Rest.Results.ExtendedShort";
+    // If any resources were restored, use the "Full" message
+    if (hitDice || hitPoints || corruption) {
+      let length;
+      switch (result.type) {
+        case restTypes.short: length = "Short"; break;
+        case restTypes.long: length = "Long"; break;
+        case restTypes.ext: length = "Extended"; break;
+      }
+      messageKey = `SYB5E.Rest.Results.${length}Full`;
     }
 
     // Create a chat message
     let chatData = {
       user: game.user.id,
-      speaker: { actor, alias: actor.name },
+      speaker: { actor: actor, alias: actor.name },
       flavor: game.i18n.localize(restFlavor),
-      content: game.i18n.format(message, {
+      content: game.i18n.format(messageKey, {
         name: actor.name,
-        dhd,
-        dhp,
-        dco: Math.abs(dco)
+        dhd: hitDice,
+        dhp: hitPoints,
+        dco: Math.abs(corruption)
       })
     };
+
     ChatMessage.applyRollMode(chatData, game.settings.get("core", "rollMode"));
     return ChatMessage.create(chatData);
   }
 
   /* -------------------------------------------- */
 
-  static async getErItemUsesRecovery(items, result) {
-    /* collect any item with 'er' type recharge */
-    const type = 'er';
-    for (const item of items.filter(i => i.system.uses?.recovery.some(r => r.type === type))) {
-      if ((item.dependentOrigin?.active === false)
-        || (foundry.utils.getType(item.system.recoverUses) !== "function")) continue;
-      const rollData = item.getRollData();
-      const { updates, rolls, destroy } = await item.system.recoverUses(recovery, rollData);
-      if (destroy) {
-        result.deleteItems.push(item.id);
-      } else if (!foundry.utils.isEmpty(updates)) {
-        const updateTarget = result.updateItems.find(i => i._id === item.id);
-        if (updateTarget) foundry.utils.mergeObject(updateTarget, updates);
-        else result.updateItems.push({ _id: item.id, ...updates });
-      }
-      result.rolls.push(...rolls);
-    }
-  }
-
-  /* -------------------------------------------- */
-
   static _restHpGain(actor, type) {
 
-    const restTypes = game.syb5e.CONFIG.REST_TYPES;
+    const restTypes = game.dnd5e.config.restTypes;
     const actor5eData = actor.system;
 
     switch (type) {
@@ -215,7 +201,7 @@ export class Resting {
 
         return hitPointsRecovered;
 
-      case restTypes.extended:
+      case restTypes.ext:
         /* Heal to full on extended */
         return actor5eData.attributes.hp.max;
 
@@ -234,6 +220,7 @@ export class Resting {
       "system.attributes.hp.value": clampedFinalHp
     }
 
+    result.deltas.hitPoints = clampedFinalHp - actor.system.attributes.hp.value;
     result.actorUpdates = hitPointUpdates;
   }
 
@@ -241,6 +228,7 @@ export class Resting {
 
   static _corruptionHealUpdate(currentCorruption, amount, result) {
     const newTemp = Math.max(currentCorruption.temp - amount, 0)
+    result.deltas.corruption = newTemp - currentCorruption.temp;
     result.actorUpdates[game.syb5e.CONFIG.PATHS.corruption.temp] = newTemp;
   }
 
